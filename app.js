@@ -256,7 +256,7 @@ function renderAuth() {
     <div class="card">
       ${ENABLE_GOOGLE ? '<button class="btn block oauth google" data-p="google"><span class="oi">G</span> 使用 Google 帳號登入</button>' : ''}
       ${ENABLE_APPLE ? '<button class="btn block oauth apple" data-p="apple"><span class="oi"></span> 使用 Apple 帳號登入</button>' : ''}
-      <p class="muted small" style="margin-top:14px;text-align:center">第一次登入會自動建立帳號<br>登入即表示你已滿 18 歲</p>
+      <p class="muted small" style="margin-top:14px;text-align:center">第一次登入會自動建立帳號<br>登入即表示你已滿 18 歲，並同意<a href="terms.html">服務條款</a>與<a href="privacy.html">隱私權政策</a></p>
     </div>`;
   $$('.oauth', view).forEach(b => b.onclick = async () => {
     b.disabled = true;
