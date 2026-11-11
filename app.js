@@ -5,6 +5,7 @@ const SUPABASE_URL = 'https://fpycbdxdjciufjedplrm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fNTxMcpoHVLY5KghadcFpQ_XYdJhXa4';
 const ENABLE_GOOGLE = true;        // Google 登入
 const ENABLE_APPLE = false;        // Apple 登入（需要 Apple Developer 付費帳號，設定好再改成 true）
+const APP_VERSION = '1.1.0';     // 每次更新要跟 version.json 一起改
 const ONLINE_MINUTES = 3;          // 幾分鐘內有心跳算在線
 const HEARTBEAT_MS = 60 * 1000;
 
@@ -20,6 +21,13 @@ const REGIONS = ['台北市', '新北市', '基隆市', '桃園市', '新竹市'
 const POST_TAGS = ['夜班日常', '值班趣事', '休假去哪', '心情', '閒聊'];
 const DM_POLICY = { all: '所有人', same_shift: '只限同班別', none: '關閉陌生訊息' };
 const ICEBREAKERS = ['值夜班最怕遇到什麼？', '你通常哪幾天休假？', '下班後第一件事做什麼？', '值班時都靠什麼提神？', '最近有什麼想去的地方？'];
+const BG_PRESETS = [
+  { url: 'bg/bg1.jpg', name: '頂樓夜景' },
+  { url: 'bg/bg2.jpg', name: '雨夜崗亭' },
+  { url: 'bg/bg3.jpg', name: '月夜星空' },
+  { url: 'bg/bg4.jpg', name: '窗邊咖啡' },
+  { url: 'bg/bg5.jpg', name: '長椅插畫' },
+];
 const SCAM_RE = /匯款|轉帳|投資|借錢|借款|虛擬貨幣|加密貨幣|比特幣|USDT|泰達幣|保證獲利|穩賺|帳戶|提款卡|驗證碼|line|賴/i;
 
 // ===== 狀態 =====
@@ -133,12 +141,76 @@ function pickFile() {
   });
 }
 
+// ===== 全站背景 =====
+function applyBackground(url) {
+  if (!url) return;
+  $('#bg').style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
+  try { localStorage.setItem('siteBg', url); } catch { /* 忽略 */ }
+}
+async function loadBackground() {
+  try { applyBackground(localStorage.getItem('siteBg') || BG_PRESETS[0].url); } catch { applyBackground(BG_PRESETS[0].url); }
+  const { data } = await sb.from('site_settings').select('value').eq('key', 'background').maybeSingle();
+  if (data?.value) applyBackground(data.value);
+}
+
+// ===== 版本偵測 =====
+async function fetchVersion() {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const history = (j.history || []).slice(0, 5);   // 只保留最近 5 個版本
+    return { ...(history[0] || {}), version: j.version || history[0]?.version, history };
+  } catch { return null; }
+}
+function notesHtml(v) {
+  return `<ul style="line-height:1.8;padding-left:20px">${(v.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+}
+let updateShown = false;
+async function checkForUpdate() {
+  if (updateShown) return;
+  const v = await fetchVersion();
+  if (!v || !v.version || v.version === APP_VERSION) return;
+  updateShown = true;
+  const bar = document.createElement('div');
+  bar.id = 'updateBar';
+  bar.innerHTML = `🎉 有新版本 v${esc(v.version)}，點這裡看改了什麼`;
+  bar.onclick = () => {
+    const box = openModal(`<h3 style="margin-top:0">新版本 v${esc(v.version)}</h3>
+      <p class="muted small">${esc(v.date || '')}</p>${notesHtml(v)}
+      <button class="btn block" id="doUpdate">立即更新</button>
+      <button class="btn ghost block" id="later" style="margin-top:8px">稍後</button>`);
+    $('#doUpdate', box).onclick = () => location.reload();
+    $('#later', box).onclick = closeModal;
+  };
+  document.body.appendChild(bar);
+}
+async function showWhatsNew() {
+  let seen = null;
+  try { seen = localStorage.getItem('seenVersion'); localStorage.setItem('seenVersion', APP_VERSION); } catch { return; }
+  if (!seen || seen === APP_VERSION) return;   // 第一次使用不顯示
+  const v = await fetchVersion();
+  if (!v || v.version !== APP_VERSION) return;
+  const box = openModal(`<h3 style="margin-top:0">✨ 已更新到 v${esc(v.version)}</h3>
+    <p class="muted">這次改了：</p>${notesHtml(v)}
+    <button class="btn block" id="okNew">知道了</button>`);
+  $('#okNew', box).onclick = closeModal;
+}
+function startVersionWatch() {
+  setInterval(checkForUpdate, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+  setTimeout(checkForUpdate, 3000);
+}
+
 // ===== 啟動 =====
 async function boot() {
+  loadBackground();
+  startVersionWatch();
   const { data: { session } } = await sb.auth.getSession();
   // 登入回來後網址會帶 ?code=，清掉
   if (location.search) history.replaceState(null, '', location.pathname + location.hash);
   await onSession(session);
+  showWhatsNew();
   sb.auth.onAuthStateChange((event, s) => {
     if (event === 'SIGNED_IN' && !state.user) onSession(s);
     if (event === 'SIGNED_OUT') onSession(null);
@@ -218,6 +290,7 @@ function onIncomingMessage(payload) {
 // ===== 路由 =====
 async function route() {
   state.currentChat = null;
+  document.body.classList.remove('login');
   if (!state.user) return renderAuth();
   if (!state.me) return renderEditProfile(true);
   const h = location.hash || '#/online';
@@ -239,6 +312,7 @@ async function route() {
       case 'myposts': return renderMyPosts();
       case 'guide': return renderOnboarding(0, true);
       case 'blocked': return renderBlocked();
+      case 'changelog': return renderChangelog();
       case 'admin': return renderAdmin();
       default: location.hash = '#/online';
     }
@@ -251,6 +325,7 @@ async function route() {
 // ===== 登入（只限 Google / Apple）=====
 function renderAuth() {
   setTitle('夜哨交友'); setTab(null);
+  document.body.classList.add('login');
   view.innerHTML = `
     <div class="hero"><div class="logo">🌙</div><h2>夜哨交友</h2><p>保全人員與想認識保全的人<br>值班的夜裡，有人陪你聊天</p></div>
     <div class="card">
@@ -843,6 +918,7 @@ function renderMe() {
     </div>
     <div class="card">
       <a class="menu-item" href="#/guide">📖 新手說明 / 防詐騙須知</a>
+      <a class="menu-item" href="#/changelog">🆕 更新紀錄（目前 v${APP_VERSION}）</a>
       <a class="menu-item" href="#/blocked">🚫 封鎖名單</a>
       ${state.isAdmin ? '<a class="menu-item" href="#/admin">🛠 管理後台</a>' : ''}
       <button class="menu-item" id="logout">登出</button>
@@ -871,6 +947,19 @@ async function renderMyPosts() {
   view.innerHTML = '<div id="mp"><div class="loading">載入中…</div></div>';
   const { data } = await sb.from('posts').select('*').eq('author_id', state.user.id).order('created_at', { ascending: false }).limit(50);
   renderPostList($('#mp'), data || [], '你還沒發過動態');
+}
+
+async function renderChangelog() {
+  setTitle('更新紀錄', true); setTab(null);
+  view.innerHTML = '<div class="loading">載入中…</div>';
+  const v = await fetchVersion();
+  if (!v || !v.history.length) { view.innerHTML = '<div class="empty">讀取不到更新紀錄</div>'; return; }
+  view.innerHTML = (v.version !== APP_VERSION
+      ? `<div class="warn">有新版本 v${esc(v.version)}，<a href="#" id="reload">點這裡更新</a></div>` : '') +
+    v.history.map(h => `<div class="card"><div class="row"><b class="grow">v${esc(h.version)}${h.version === APP_VERSION ? ' <span class="tag">目前版本</span>' : ''}</b>
+      <span class="muted small">${esc(h.date || '')}</span></div>${notesHtml(h)}</div>`).join('') +
+    '<p class="muted small" style="text-align:center">只保留最近 5 個版本的紀錄</p>';
+  if ($('#reload')) $('#reload').onclick = e => { e.preventDefault(); location.reload(); };
 }
 
 async function renderBlocked() {
@@ -902,7 +991,19 @@ async function renderAdmin() {
   const postMap = Object.fromEntries((posts || []).map(p => [p.id, p]));
   await getProfiles([...(reps || []).flatMap(r => [r.reporter_id, r.target_user_id]), ...(bans || []).map(b => b.user_id)].filter(Boolean));
   const nm = id => esc(state.profiles.get(id)?.nickname || '（已刪除）');
-  view.innerHTML = `<h3>待處理檢舉（${(reps || []).length}）</h3>
+  const { data: bgRow } = await sb.from('site_settings').select('value').eq('key', 'background').maybeSingle();
+  const curBg = bgRow?.value || BG_PRESETS[0].url;
+  const isCustom = !BG_PRESETS.some(b => b.url === curBg);
+  view.innerHTML = `<h3>網站背景</h3>
+    <div class="card">
+      <div class="bg-grid">
+        ${BG_PRESETS.map(b => `<div class="bgi ${b.url === curBg ? 'on' : ''}" data-bg="${b.url}" style="background-image:url('${b.url}')" title="${b.name}"></div>`).join('')}
+        ${isCustom ? `<div class="bgi on" data-bg="${esc(curBg)}" style="background-image:url('${esc(curBg)}')"></div>` : ''}
+        <div class="bgi add" id="bgUp">＋<br>上傳<br>新背景</div>
+      </div>
+      <p class="muted small" style="margin-bottom:0">點一下就會套用到所有人。建議用直式 9:16、偏暗的圖。</p>
+    </div>
+    <h3>待處理檢舉（${(reps || []).length}）</h3>
     ${(reps || []).map(r => `<div class="card">
       <div class="muted small">${timeAgo(r.created_at)} · ${nm(r.reporter_id)} 檢舉</div>
       <div style="margin:6px 0"><b>對象：</b>${r.target_user_id ? `<a href="#/u/${r.target_user_id}">${nm(r.target_user_id)}</a>` : '—'}</div>
@@ -915,8 +1016,20 @@ async function renderAdmin() {
       </div></div>`).join('') || '<p class="muted">沒有待處理的檢舉</p>'}
     <h3>停權名單（${(bans || []).length}）</h3>
     ${(bans || []).map(b => `<div class="conv"><b class="grow">${nm(b.user_id)}</b><button class="btn ghost small" data-unban="${b.user_id}">解除停權</button></div>`).join('') || '<p class="muted">無</p>'}`;
+  const setBg = async url => {
+    const { error } = await sb.from('site_settings').upsert({ key: 'background', value: url, updated_at: new Date().toISOString() });
+    if (error) return toast('設定失敗：' + error.message);
+    applyBackground(url); toast('已套用新背景'); renderAdmin();
+  };
   view.onclick = async e => {
     const t = e.target;
+    if (t.id === 'bgUp' || t.closest('#bgUp')) {
+      const f = await pickFile(); if (!f) return;
+      toast('上傳中…', 15000);
+      try { await setBg(await uploadImage(f, 1600)); } catch (err) { toast('上傳失敗：' + err.message); }
+      return;
+    }
+    if (t.dataset.bg) { await setBg(t.dataset.bg); return; }
     if (t.dataset.ban) { if (!confirmText('確定停權？')) return; await sb.from('bans').insert({ user_id: t.dataset.ban, reason: '檢舉處理' }); toast('已停權'); }
     else if (t.dataset.dp) { if (!confirmText('確定刪除文章？')) return; await sb.from('posts').delete().eq('id', t.dataset.dp); toast('已刪除'); }
     else if (t.dataset.done) { await sb.from('reports').update({ status: 'done' }).eq('id', t.dataset.done); }
