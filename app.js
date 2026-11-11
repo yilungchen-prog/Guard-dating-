@@ -1,11 +1,12 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import { ICON, mascot } from './art.js?v=1.2.0';
 
 // ===== 設定 =====
 const SUPABASE_URL = 'https://fpycbdxdjciufjedplrm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fNTxMcpoHVLY5KghadcFpQ_XYdJhXa4';
 const ENABLE_GOOGLE = true;        // Google 登入
 const ENABLE_APPLE = false;        // Apple 登入（需要 Apple Developer 付費帳號，設定好再改成 true）
-const APP_VERSION = '1.1.0';     // 每次更新要跟 version.json 一起改
+const APP_VERSION = '1.2.0';     // 每次更新要跟 version.json 一起改
 const ONLINE_MINUTES = 3;          // 幾分鐘內有心跳算在線
 const HEARTBEAT_MS = 60 * 1000;
 
@@ -13,6 +14,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', 
 
 // ===== 常數 =====
 const SHIFT = { day: '日班', night: '夜班', rotating: '輪班' };
+const SHIFT_ICON = { day: '☀️', night: '🌙', rotating: '🔄' };
 const IDENTITY = { guard: '保全', fan: '想認識保全' };
 const GENDER = { male: '男', female: '女', other: '不透露' };
 const DAYS = ['一', '二', '三', '四', '五', '六', '日', '不固定'];
@@ -92,7 +94,7 @@ function avatar(p, size = '', online = false) {
 function tags(p) {
   if (!p) return '';
   return `<span class="tag ${p.identity === 'guard' ? 'guard' : ''}">${IDENTITY[p.identity] || ''}</span>` +
-    `<span class="tag shift-${p.shift}">${SHIFT[p.shift] || ''}</span>`;
+    `<span class="tag shift-${p.shift}">${SHIFT_ICON[p.shift] || ''} ${SHIFT[p.shift] || ''}</span>`;
 }
 function setTitle(t, back = false, right = '') {
   $('#title').textContent = t;
@@ -141,6 +143,45 @@ function pickFile() {
   });
 }
 
+// ===== Q 版裝飾與動畫 =====
+const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+function decorate(root) {
+  $$('.loading:not([data-m])', root).forEach(el => { el.dataset.m = 1; el.innerHTML = mascot('torch', 'sm') + '<div>巡邏中…</div>'; });
+  $$('.empty:not([data-m])', root).forEach(el => { el.dataset.m = 1; el.insertAdjacentHTML('afterbegin', mascot('sleep', 'sm')); });
+  if (reduceMotion) return;
+  let i = 0;
+  $$('.card:not([data-a]), .u:not([data-a]), .conv:not([data-a])', root).forEach(el => {
+    el.dataset.a = 1; el.classList.add('fade-in'); el.style.animationDelay = Math.min(i++, 10) * 40 + 'ms';
+  });
+}
+new MutationObserver(() => decorate(view)).observe(view, { childList: true, subtree: true });
+function initTabIcons() {
+  const map = { online: 'radar', feed: 'logbook', chats: 'walkie', notif: 'whistle', me: 'cap' };
+  $$('#tabbar a').forEach(a => { $('.ti', a).innerHTML = ICON[map[a.dataset.tab]]; });
+}
+function heartBurst(btn) {
+  if (reduceMotion) return;
+  btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop');
+  for (let k = 0; k < 6; k++) {
+    const h = document.createElement('span'); h.className = 'mini-heart'; h.textContent = '♥';
+    const ang = (Math.PI * 2 * k) / 6 + Math.random() * .5;
+    h.style.setProperty('--dx', Math.cos(ang) * 26 + 'px'); h.style.setProperty('--dy', Math.sin(ang) * 26 - 10 + 'px');
+    btn.appendChild(h); setTimeout(() => h.remove(), 700);
+  }
+}
+function flyPlane(fromEl) {
+  if (reduceMotion || !fromEl) return;
+  const r = fromEl.getBoundingClientRect();
+  const p = document.createElement('div'); p.className = 'fly-plane'; p.innerHTML = ICON.plane;
+  p.style.left = r.left + r.width / 2 - 12 + 'px'; p.style.top = r.top - 6 + 'px';
+  document.body.appendChild(p); setTimeout(() => p.remove(), 900);
+}
+function starsHtml() {
+  let h = '<div class="stars">';
+  for (let k = 0; k < 18; k++) h += `<i style="left:${(Math.random() * 100).toFixed(1)}%;top:${(Math.random() * 100).toFixed(1)}%;animation-delay:${(Math.random() * 3).toFixed(2)}s;--s:${(0.5 + Math.random()).toFixed(2)}"></i>`;
+  return h + '</div>';
+}
+
 // ===== 全站背景 =====
 function applyBackground(url) {
   if (!url) return;
@@ -166,11 +207,16 @@ async function fetchVersion() {
 function notesHtml(v) {
   return `<ul style="line-height:1.8;padding-left:20px">${(v.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
 }
+function isNewer(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); }
+  return false;
+}
 let updateShown = false;
 async function checkForUpdate() {
   if (updateShown) return;
   const v = await fetchVersion();
-  if (!v || !v.version || v.version === APP_VERSION) return;
+  if (!v || !v.version || !isNewer(v.version, APP_VERSION)) return;
   updateShown = true;
   const bar = document.createElement('div');
   bar.id = 'updateBar';
@@ -204,6 +250,7 @@ function startVersionWatch() {
 
 // ===== 啟動 =====
 async function boot() {
+  initTabIcons();
   loadBackground();
   startVersionWatch();
   const { data: { session } } = await sb.auth.getSession();
@@ -272,6 +319,8 @@ async function refreshBadges() {
   ]);
   const set = (el, c) => { el.textContent = c > 99 ? '99+' : c; el.classList.toggle('hidden', !c); };
   set($('#badgeChat'), m || 0); set($('#badgeNotif'), n || 0);
+  $('#tabbar a[data-tab=chats]').classList.toggle('has-new', !!m);
+  $('#tabbar a[data-tab=notif]').classList.toggle('has-new', !!n);
 }
 
 function onIncomingMessage(payload) {
@@ -327,7 +376,8 @@ function renderAuth() {
   setTitle('夜哨交友'); setTab(null);
   document.body.classList.add('login');
   view.innerHTML = `
-    <div class="hero"><div class="logo">🌙</div><h2>夜哨交友</h2><p>保全人員與想認識保全的人<br>值班的夜裡，有人陪你聊天</p></div>
+    ${starsHtml()}
+    <div class="hero">${mascot('hello', 'lg')}<h2>夜哨交友</h2><p>保全人員與想認識保全的人<br>值班的夜裡，有人陪你聊天</p></div>
     <div class="card">
       ${ENABLE_GOOGLE ? '<button class="btn block oauth google" data-p="google"><span class="oi">G</span> 使用 Google 帳號登入</button>' : ''}
       ${ENABLE_APPLE ? '<button class="btn block oauth apple" data-p="apple"><span class="oi"></span> 使用 Apple 帳號登入</button>' : ''}
@@ -425,14 +475,14 @@ function renderOnboarding(page, review = false) {
   setTitle('新手說明', review); setTab(null);
   const steps = `<div class="steps">${[0, 1, 2].map(i => `<i class="${i <= page ? 'on' : ''}"></i>`).join('')}</div>`;
   const pages = [
-    `<h2>👋 歡迎來到夜哨交友</h2>
+    `<div class="center">${mascot('hello')}</div><h2>👋 歡迎來到夜哨交友</h2>
      <ul>
        <li>這裡是<b>保全人員</b>和<b>想認識保全的人</b>的交友空間</li>
        <li>不用配對，看到<b>在線的人</b>就能直接聊天</li>
        <li>在<b>動態牆</b>分享值班心得、生活點滴</li>
        <li>可以篩選<b>同班別</b>的人，夜班找夜班，最有話聊</li>
      </ul>`,
-    `<h2>🛡️ 保護自己（防詐騙）</h2>
+    `<div class="center">${mascot('shield')}</div><h2>🛡️ 保護自己（防詐騙）</h2>
      <div class="warn">本站<b>沒有身分驗證</b>，對方說的身分不一定是真的。</div>
      <ul>
        <li>談到<b>錢、投資、借款、匯款、虛擬貨幣</b>，一律拒絕</li>
@@ -441,7 +491,7 @@ function renderOnboarding(page, review = false) {
        <li>第一次見面約在<b>人多的公開場所</b>，並告訴朋友</li>
        <li>遇到可疑情況，撥打 <b>165 反詐騙專線</b></li>
      </ul>`,
-    `<h2>🔒 設定你的隱私</h2>
+    `<div class="center">${mascot('lock')}</div><h2>🔒 設定你的隱私</h2>
      <h3>誰可以私訊我</h3>
      <div class="radio-list">${Object.entries(DM_POLICY).map(([k, v]) => `<label><input type="radio" name="dm" value="${k}" ${state.me.dm_policy === k ? 'checked' : ''}> ${v}</label>`).join('')}</div>
      <div class="switch-row"><div>隱身模式<div class="muted small">開啟後別人看不到你在線</div></div><input type="checkbox" id="inv" ${state.me.invisible ? 'checked' : ''}></div>
@@ -559,7 +609,7 @@ async function renderUser(id) {
         <dt>私訊</dt><dd>${p.dm_policy === 'all' ? '接受所有人' : p.dm_policy === 'same_shift' ? `只接受${SHIFT[p.shift]}私訊` : '不接受陌生訊息'}</dd>
       </dl>
       ${p.bio ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(p.bio)}</p>` : ''}
-      ${blocked ? '<div class="warn">你已封鎖此人</div>' : '<button class="btn block" id="dm" style="margin-top:8px">💬 傳訊息</button>'}
+      ${blocked ? '<div class="warn">你已封鎖此人</div>' : `<button class="btn block" id="dm" style="margin-top:8px">${ICON.walkie} 傳訊息</button>`}
     </div>
     <h3>${esc(p.nickname)} 的動態</h3><div id="uposts"><div class="loading">載入中…</div></div>`;
   if ($('#dm')) $('#dm').onclick = () => { location.hash = '#/chat/' + id; };
@@ -618,7 +668,7 @@ async function renderFeed() {
     <div class="chips" id="tagf" style="margin-bottom:12px"><span class="chip ${!fs.tag ? 'on' : ''}" data-t="">全部</span>${POST_TAGS.map(t => `<span class="chip ${fs.tag === t ? 'on' : ''}" data-t="${t}">#${t}</span>`).join('')}</div>
     <div id="plist"><div class="loading">載入中…</div></div>
     <div style="text-align:center"><button class="btn ghost small hidden" id="moreP">載入更多</button></div>
-    <button class="fab" id="fab" aria-label="發文">＋</button>`;
+    <button class="fab" id="fab" aria-label="發文">${ICON.logbook}</button>`;
   const saveF = () => { sessionStorage.setItem('feedF', JSON.stringify(fs)); renderFeed(); };
   $$('.seg button', view).forEach(b => b.onclick = () => { fs.scope = b.dataset.s; saveF(); });
   $('#tagf').onclick = e => { const c = e.target.closest('.chip'); if (c) { fs.tag = c.dataset.t; saveF(); } };
@@ -663,15 +713,15 @@ function postCard(p, a, nLike, isLiked, nCmt, full = false) {
   const open = full ? '' : `data-open="${p.id}"`;
   return `<div class="card post" data-id="${p.id}" data-author="${p.author_id}">
     <a class="head" href="#/u/${p.author_id}">${avatar(a, 'sm')}
-      <div class="grow"><div><b>${esc(a?.nickname || '已刪除的使用者')}</b> ${a ? `<span class="tag shift-${a.shift}">${SHIFT[a.shift]}</span>` : ''}</div>
+      <div class="grow"><div><b>${esc(a?.nickname || '已刪除的使用者')}</b> ${a ? `<span class="tag shift-${a.shift}">${SHIFT_ICON[a.shift]} ${SHIFT[a.shift]}</span>` : ''}</div>
       <div class="muted small">${timeAgo(p.created_at)}${p.tag ? ' · #' + esc(p.tag) : ''}</div></div></a>
     <div class="content" ${open}>${esc(p.content)}</div>
     ${p.image_url ? `<img class="pimg" src="${esc(p.image_url)}" loading="lazy" ${open}>` : ''}
     <div class="acts">
-      <button data-like="${p.id}" class="${isLiked ? 'liked' : ''}"><i>${isLiked ? '♥' : '♡'}</i> <span>${nLike}</span></button>
-      <button data-open="${p.id}">💬 ${nCmt}</button>
+      <button data-like="${p.id}" class="like ${isLiked ? 'liked' : ''}">${ICON.heart} <span>${nLike}</span></button>
+      <button data-open="${p.id}">${ICON.comment} ${nCmt}</button>
       <span class="grow"></span>
-      <button data-pmore="${p.id}">⋯</button>
+      <button data-pmore="${p.id}" aria-label="更多">${ICON.more}</button>
     </div></div>`;
 }
 
@@ -681,7 +731,8 @@ function bindPostActions(container) {
     if (lk) {
       if (state.banned) return toast('帳號已停權');
       const id = +lk.dataset.like; const on = lk.classList.contains('liked'); const span = $('span', lk);
-      lk.classList.toggle('liked'); $('i', lk).textContent = on ? '♡' : '♥'; span.textContent = (+span.textContent) + (on ? -1 : 1);
+      lk.classList.toggle('liked'); span.textContent = (+span.textContent) + (on ? -1 : 1);
+      if (!on) heartBurst(lk);
       if (on) await sb.from('post_likes').delete().eq('post_id', id).eq('user_id', state.user.id);
       else await sb.from('post_likes').insert({ post_id: id, user_id: state.user.id });
       return;
@@ -758,7 +809,7 @@ function renderNewPost() {
     <label class="f">分類</label>
     <div class="chips" id="pt">${POST_TAGS.map(t => `<span class="chip" data-t="${t}">#${t}</span>`).join('')}</div>
     <div id="pimg" style="margin-top:12px"></div>
-    <div class="row" style="margin-top:12px"><button class="btn ghost" id="addImg">📷 加照片</button><span class="grow"></span><button class="btn" id="pub">發布</button></div>
+    <div class="row" style="margin-top:12px"><button class="btn ghost" id="addImg">${ICON.camera} 加照片</button><span class="grow"></span><button class="btn" id="pub">發布</button></div>
     <p class="muted small" style="margin-top:12px">請勿在文章中透露公司名稱、哨位或個人資料。</p>
   </div>`;
   $('#pt').onclick = e => {
@@ -836,9 +887,9 @@ async function renderChat(otherId) {
     ${!reason && !list.length ? `<div class="icebreakers">${ICEBREAKERS.map(t => `<span class="chip" data-ice="${esc(t)}">${t}</span>`).join('')}</div>` : ''}
     <div class="chat-input">
       ${reason ? `<div class="muted grow" style="padding:10px">${esc(reason)}</div>` : `
-      <button class="icon-btn" id="img" style="font-size:24px">📷</button>
+      <button class="icon-btn" id="img" aria-label="傳照片">${ICON.camera}</button>
       <textarea id="txt" rows="1" placeholder="輸入訊息…" maxlength="1000"></textarea>
-      <button class="btn" id="send">送出</button>`}
+      <button class="btn" id="send" aria-label="送出">${ICON.plane}</button>`}
     </div></div>`;
   const box = $('#msgs');
   let lastDay = '';
@@ -872,7 +923,7 @@ async function renderChat(otherId) {
     const v = txt.value.trim(); if (!v) return;
     if (/匯款|轉帳|帳戶|提款卡|驗證碼/.test(v)) toast('提醒：不要透露帳戶或驗證碼', 3000);
     $('#send').disabled = true;
-    if (await send(v)) { txt.value = ''; txt.style.height = 'auto'; }
+    if (await send(v)) { flyPlane($('#send')); txt.value = ''; txt.style.height = 'auto'; }
     $('#send').disabled = false; txt.focus();
   };
   $('#img').onclick = async () => {
@@ -954,7 +1005,7 @@ async function renderChangelog() {
   view.innerHTML = '<div class="loading">載入中…</div>';
   const v = await fetchVersion();
   if (!v || !v.history.length) { view.innerHTML = '<div class="empty">讀取不到更新紀錄</div>'; return; }
-  view.innerHTML = (v.version !== APP_VERSION
+  view.innerHTML = (isNewer(v.version, APP_VERSION)
       ? `<div class="warn">有新版本 v${esc(v.version)}，<a href="#" id="reload">點這裡更新</a></div>` : '') +
     v.history.map(h => `<div class="card"><div class="row"><b class="grow">v${esc(h.version)}${h.version === APP_VERSION ? ' <span class="tag">目前版本</span>' : ''}</b>
       <span class="muted small">${esc(h.date || '')}</span></div>${notesHtml(h)}</div>`).join('') +

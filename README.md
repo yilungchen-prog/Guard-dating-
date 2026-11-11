@@ -8,5 +8,5 @@
 
 ## 發布新版本的步驟
 1. `app.js` 的 `APP_VERSION` 改成新版本號
-2. `index.html` 的 `style.css?v=`、`app.js?v=` 改成同一個版本號
+2. `index.html` 的 `style.css?v=`、`app.js?v=`，以及 `app.js` 裡 `art.js?v=` 改成同一個版本號
 3. `version.json`：`version` 改新版本號，在 `history` 最前面加一筆（版本、日期、改了什麼），只保留 5 筆
