@@ -286,3 +286,16 @@ body.login #bgShade { background: linear-gradient(180deg, rgba(10,16,30,.15) 0%,
 #topbar { background: rgba(15,23,41,.94) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 #topbar h1 { color: #fff; font-weight: 700; -webkit-font-smoothing: antialiased; }
 input[type=range] { accent-color: var(--accent); height: 28px; }
+
+/* v1.3.1 */
+/* 空白頁提示：半透明底框、白字 */
+.empty { background: rgba(12, 19, 36, .78); border: 1px solid var(--line); border-radius: 18px; padding: 20px 18px 22px;
+  max-width: 340px; margin: 30px auto; color: #eef2fa; line-height: 1.6; text-shadow: 0 1px 4px rgba(0,0,0,.6);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.empty a { font-weight: 700; }
+.loading { color: #eef2fa; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+/* 頂端標題避開 iPhone 頂部模糊區 */
+#topbar { padding-top: calc(22px + var(--safe-t)); padding-bottom: 12px; }
+#topbar h1 { font-size: 19px; text-shadow: none; }
+/* 頭像置中 */
+.av-wrap { display: inline-block; vertical-align: middle; }
