@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1729">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>夜哨交友</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="topbar">
+    <button id="backBtn" class="icon-btn hidden" aria-label="返回">‹</button>
+    <h1 id="title">夜哨交友</h1>
+    <span id="topRight"></span>
+  </header>
+
+  <main id="view"><div class="loading">載入中…</div></main>
+
+  <nav id="tabbar" class="hidden">
+    <a href="#/online" data-tab="online"><span class="ti">●</span>在線</a>
+    <a href="#/feed" data-tab="feed"><span class="ti">✎</span>動態</a>
+    <a href="#/chats" data-tab="chats"><span class="ti">✉</span>聊天<b id="badgeChat" class="badge hidden"></b></a>
+    <a href="#/notif" data-tab="notif"><span class="ti">♥</span>通知<b id="badgeNotif" class="badge hidden"></b></a>
+    <a href="#/me" data-tab="me"><span class="ti">☺</span>我</a>
+  </nav>
+
+  <div id="toast" class="hidden"></div>
+  <div id="modal" class="hidden"><div class="modal-box" id="modalBox"></div></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
