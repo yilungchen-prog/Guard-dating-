@@ -1,12 +1,12 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { ICON, mascot } from './art.js?v=1.2.0';
+import { ICON, mascot } from './art.js?v=1.3.0';
 
 // ===== 設定 =====
 const SUPABASE_URL = 'https://fpycbdxdjciufjedplrm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fNTxMcpoHVLY5KghadcFpQ_XYdJhXa4';
 const ENABLE_GOOGLE = true;        // Google 登入
 const ENABLE_APPLE = false;        // Apple 登入（需要 Apple Developer 付費帳號，設定好再改成 true）
-const APP_VERSION = '1.2.0';     // 每次更新要跟 version.json 一起改
+const APP_VERSION = '1.3.0';     // 每次更新要跟 version.json 一起改
 const ONLINE_MINUTES = 3;          // 幾分鐘內有心跳算在線
 const HEARTBEAT_MS = 60 * 1000;
 
@@ -188,10 +188,20 @@ function applyBackground(url) {
   $('#bg').style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
   try { localStorage.setItem('siteBg', url); } catch { /* 忽略 */ }
 }
+const DEFAULT_SHADE = 35;   // 背景遮罩深度（0 = 不遮、80 = 很暗）
+function applyShade(pct) {
+  const v = Math.max(0, Math.min(80, Number(pct)));
+  const s = (isNaN(v) ? DEFAULT_SHADE : v) / 100;
+  $('#bgShade').style.background = `linear-gradient(180deg, rgba(10,16,30,${(s * 0.6).toFixed(2)}) 0%, rgba(10,16,30,${s.toFixed(2)}) 50%, rgba(10,16,30,${Math.min(s + 0.25, 0.95).toFixed(2)}) 100%)`;
+  try { localStorage.setItem('siteShade', String(v)); } catch { /* 忽略 */ }
+}
 async function loadBackground() {
-  try { applyBackground(localStorage.getItem('siteBg') || BG_PRESETS[0].url); } catch { applyBackground(BG_PRESETS[0].url); }
-  const { data } = await sb.from('site_settings').select('value').eq('key', 'background').maybeSingle();
-  if (data?.value) applyBackground(data.value);
+  try {
+    applyBackground(localStorage.getItem('siteBg') || BG_PRESETS[0].url);
+    applyShade(localStorage.getItem('siteShade') ?? DEFAULT_SHADE);
+  } catch { applyBackground(BG_PRESETS[0].url); applyShade(DEFAULT_SHADE); }
+  const { data } = await sb.from('site_settings').select('key,value').in('key', ['background', 'bg_shade']);
+  (data || []).forEach(r => { if (r.key === 'background') applyBackground(r.value); else applyShade(r.value); });
 }
 
 // ===== 版本偵測 =====
@@ -714,7 +724,7 @@ function postCard(p, a, nLike, isLiked, nCmt, full = false) {
   return `<div class="card post" data-id="${p.id}" data-author="${p.author_id}">
     <a class="head" href="#/u/${p.author_id}">${avatar(a, 'sm')}
       <div class="grow"><div><b>${esc(a?.nickname || '已刪除的使用者')}</b> ${a ? `<span class="tag shift-${a.shift}">${SHIFT_ICON[a.shift]} ${SHIFT[a.shift]}</span>` : ''}</div>
-      <div class="muted small">${timeAgo(p.created_at)}${p.tag ? ' · #' + esc(p.tag) : ''}</div></div></a>
+      <div class="muted small">${timeAgo(p.created_at)}${p.edited_at ? '（已編輯）' : ''}${p.tag ? ' · #' + esc(p.tag) : ''}</div></div></a>
     <div class="content" ${open}>${esc(p.content)}</div>
     ${p.image_url ? `<img class="pimg" src="${esc(p.image_url)}" loading="lazy" ${open}>` : ''}
     <div class="acts">
@@ -740,12 +750,14 @@ function bindPostActions(container) {
     const pm = e.target.closest('[data-pmore]');
     if (pm) {
       const card = pm.closest('.post'); const id = +pm.dataset.pmore; const mine = card.dataset.author === state.user.id;
-      const box = openModal(`${mine || state.isAdmin ? '<button class="menu-item danger" data-a="del">🗑 刪除這篇</button>' : ''}
+      const box = openModal(`${mine ? '<button class="menu-item" data-a="edit">✏️ 編輯這篇</button>' : ''}
+        ${mine || state.isAdmin ? '<button class="menu-item danger" data-a="del">🗑 刪除這篇</button>' : ''}
         ${!mine ? '<button class="menu-item danger" data-a="rep">⚠️ 檢舉這篇</button>' : ''}
         <button class="menu-item" data-a="close">取消</button>`);
       box.onclick = async ev => {
         const a = ev.target.dataset.a; if (!a) return;
         if (a === 'close') return closeModal();
+        if (a === 'edit') { closeModal(); return editPost(id, () => location.hash.startsWith('#/post/') ? renderPost(id) : route()); }
         if (a === 'del') {
           if (!confirmText('確定刪除？')) return;
           const { error } = await sb.from('posts').delete().eq('id', id);
@@ -758,6 +770,43 @@ function bindPostActions(container) {
     }
     const op = e.target.closest('[data-open]');
     if (op) location.hash = '#/post/' + op.dataset.open;
+  };
+}
+
+async function editPost(id, done) {
+  const { data: p } = await sb.from('posts').select('*').eq('id', id).maybeSingle();
+  if (!p) return toast('找不到這篇動態');
+  if (state.banned) return toast('帳號已停權');
+  let tag = p.tag || '', imageUrl = p.image_url;
+  const box = openModal(`<h3 style="margin-top:0">✏️ 編輯動態</h3>
+    <textarea id="ec" maxlength="2000" style="min-height:150px">${esc(p.content)}</textarea>
+    <label class="f">分類</label>
+    <div class="chips" id="et">${POST_TAGS.map(t => `<span class="chip ${t === tag ? 'on' : ''}" data-t="${t}">#${t}</span>`).join('')}</div>
+    <div id="eimg" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:12px"><button class="btn ghost small" id="eAdd">${ICON.camera} 換照片</button></div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost grow" id="eCancel">取消</button><button class="btn grow" id="eSave">儲存</button></div>`);
+  const drawImg = () => {
+    $('#eimg', box).innerHTML = imageUrl ? `<img src="${esc(imageUrl)}" style="max-width:100%;max-height:220px;border-radius:10px"><br><button class="btn ghost small" id="eRm" style="margin-top:6px">移除照片</button>` : '';
+    if ($('#eRm', box)) $('#eRm', box).onclick = () => { imageUrl = null; drawImg(); };
+  };
+  drawImg();
+  $('#et', box).onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    const on = c.classList.contains('on'); $$('.chip', $('#et', box)).forEach(x => x.classList.remove('on'));
+    if (!on) { c.classList.add('on'); tag = c.dataset.t; } else tag = '';
+  };
+  $('#eAdd', box).onclick = async () => {
+    const f = await pickFile(); if (!f) return;
+    toast('上傳中…', 15000);
+    try { imageUrl = await uploadImage(f); toast('已上傳'); drawImg(); } catch (err) { toast('上傳失敗：' + err.message); }
+  };
+  $('#eCancel', box).onclick = closeModal;
+  $('#eSave', box).onclick = async () => {
+    const content = $('#ec', box).value.trim(); if (!content) return toast('內容不能空白');
+    $('#eSave', box).disabled = true;
+    const { error } = await sb.from('posts').update({ content, tag: tag || null, image_url: imageUrl }).eq('id', id);
+    if (error) { $('#eSave', box).disabled = false; return toast('儲存失敗：' + error.message); }
+    closeModal(); toast('已更新'); done?.();
   };
 }
 
@@ -1042,8 +1091,10 @@ async function renderAdmin() {
   const postMap = Object.fromEntries((posts || []).map(p => [p.id, p]));
   await getProfiles([...(reps || []).flatMap(r => [r.reporter_id, r.target_user_id]), ...(bans || []).map(b => b.user_id)].filter(Boolean));
   const nm = id => esc(state.profiles.get(id)?.nickname || '（已刪除）');
-  const { data: bgRow } = await sb.from('site_settings').select('value').eq('key', 'background').maybeSingle();
-  const curBg = bgRow?.value || BG_PRESETS[0].url;
+  const { data: setRows } = await sb.from('site_settings').select('key,value').in('key', ['background', 'bg_shade']);
+  const setMap = Object.fromEntries((setRows || []).map(r => [r.key, r.value]));
+  const curBg = setMap.background || BG_PRESETS[0].url;
+  const curShade = Number(setMap.bg_shade ?? DEFAULT_SHADE);
   const isCustom = !BG_PRESETS.some(b => b.url === curBg);
   view.innerHTML = `<h3>網站背景</h3>
     <div class="card">
@@ -1052,7 +1103,9 @@ async function renderAdmin() {
         ${isCustom ? `<div class="bgi on" data-bg="${esc(curBg)}" style="background-image:url('${esc(curBg)}')"></div>` : ''}
         <div class="bgi add" id="bgUp">＋<br>上傳<br>新背景</div>
       </div>
-      <p class="muted small" style="margin-bottom:0">點一下就會套用到所有人。建議用直式 9:16、偏暗的圖。</p>
+      <label class="f">背景亮度 <span id="shadeVal" class="muted">${100 - curShade}%</span></label>
+      <div class="row"><span class="muted small">暗</span><input type="range" id="shade" min="0" max="80" step="5" value="${80 - curShade}" class="grow"><span class="muted small">亮</span></div>
+      <p class="muted small" style="margin-bottom:0">點圖片或拉滑桿就會套用到所有人。建議用直式 9:16 的圖。</p>
     </div>
     <h3>待處理檢舉（${(reps || []).length}）</h3>
     ${(reps || []).map(r => `<div class="card">
@@ -1071,6 +1124,13 @@ async function renderAdmin() {
     const { error } = await sb.from('site_settings').upsert({ key: 'background', value: url, updated_at: new Date().toISOString() });
     if (error) return toast('設定失敗：' + error.message);
     applyBackground(url); toast('已套用新背景'); renderAdmin();
+  };
+  const shadeEl = $('#shade');
+  shadeEl.oninput = () => { const v = 80 - +shadeEl.value; applyShade(v); $('#shadeVal').textContent = (100 - v) + '%'; };
+  shadeEl.onchange = async () => {
+    const v = String(80 - +shadeEl.value);
+    const { error } = await sb.from('site_settings').upsert({ key: 'bg_shade', value: v, updated_at: new Date().toISOString() });
+    toast(error ? '儲存失敗：' + error.message : '已套用新的背景亮度');
   };
   view.onclick = async e => {
     const t = e.target;
