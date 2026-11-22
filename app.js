@@ -1,12 +1,12 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { ICON, mascot } from './art.js?v=2.0.0';
+import { ICON, mascot } from './art.js?v=2.0.1';
 
 // ===== 設定 =====
 const SUPABASE_URL = 'https://fpycbdxdjciufjedplrm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fNTxMcpoHVLY5KghadcFpQ_XYdJhXa4';
 const ENABLE_GOOGLE = true;        // Google 登入
 const ENABLE_APPLE = false;        // Apple 登入（需要 Apple Developer 付費帳號，設定好再改成 true）
-const APP_VERSION = '2.0.0';     // 每次更新要跟 version.json 一起改
+const APP_VERSION = '2.0.1';     // 每次更新要跟 version.json 一起改
 const ONLINE_MINUTES = 3;          // 幾分鐘內有心跳算在線
 const HEARTBEAT_MS = 60 * 1000;
 
@@ -136,7 +136,9 @@ async function uploadImage(file, max = 1280) {
 function pickFile(accept = 'image/*') {
   return new Promise(res => {
     const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept;
-    inp.onchange = () => res(inp.files[0] || null); inp.click();
+    inp.onchange = () => res(inp.files[0] || null);
+    inp.addEventListener('cancel', () => res(null));   // 按取消也要結束
+    inp.click();
   });
 }
 
@@ -281,10 +283,13 @@ function probeVideo(file) {
     setTimeout(() => finish(null), 8000);
   });
 }
-async function uploadWithProgress(bucket, path, blob, contentType, onProgress) {
+async function uploadWithProgress(bucket, path, blob, contentType, onProgress, ctl) {
   const { data: { session } } = await sb.auth.getSession();
+  if (ctl?.cancelled) throw new Error('已取消上傳');
   await new Promise((res, rej) => {
     const x = new XMLHttpRequest();
+    if (ctl) ctl.xhr = x;
+    x.onabort = () => rej(new Error('已取消上傳'));
     x.open('POST', `${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`);
     x.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
     x.setRequestHeader('apikey', SUPABASE_KEY);
@@ -301,19 +306,21 @@ async function uploadWithProgress(bucket, path, blob, contentType, onProgress) {
   });
   return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
-// 選影片 → 檢查 → 上傳；回傳 { video_url, video_poster }
-async function pickAndUploadVideo(onProgress) {
-  const f = await pickFile('video/*'); if (!f) return null;
+// 檢查 → 上傳（已經選好的影片）；回傳 { video_url, video_poster }
+async function uploadVideoFile(f, onProgress, ctl) {
   if (f.size > VIDEO_MAX_BYTES) throw new Error(`影片太大（${(f.size / 1048576).toFixed(0)}MB），上限 50MB，請剪短或用較低畫質拍`);
   const { duration, poster } = await probeVideo(f);
   if (isFinite(duration) && duration > VIDEO_MAX_SEC + 0.5) throw new Error(`影片太長（${Math.round(duration)} 秒），上限 ${VIDEO_MAX_SEC} 秒，請先剪短`);
+  if (ctl?.cancelled) throw new Error('已取消上傳');
+  onProgress?.(0);
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const ext = (f.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
-  const video_url = await uploadWithProgress('videos', `${state.user.id}/${stamp}.${ext}`, f, f.type || 'video/mp4', onProgress);
+  const video_url = await uploadWithProgress('videos', `${state.user.id}/${stamp}.${ext}`, f, f.type || 'video/mp4', onProgress, ctl);
   let video_poster = null;
-  if (poster) {
-    try { video_poster = await uploadWithProgress('photos', `${state.user.id}/${stamp}-poster.jpg`, poster, 'image/jpeg'); } catch { /* 沒封面也沒關係 */ }
+  if (poster && !ctl?.cancelled) {
+    try { video_poster = await uploadWithProgress('photos', `${state.user.id}/${stamp}-poster.jpg`, poster, 'image/jpeg', null, ctl); } catch { /* 沒封面也沒關係 */ }
   }
+  if (ctl?.cancelled) { removeVideoFiles(video_url, video_poster); throw new Error('已取消上傳'); }
   return { video_url, video_poster };
 }
 function storagePath(url, bucket) {
@@ -342,7 +349,26 @@ function playVideo(vb) {
   $$('.vbox.playing video').forEach(o => { if (o !== v) o.pause(); });
 }
 function progressHtml() {
-  return '<div class="upbar"><i></i><span>影片上傳中… 0%</span></div>';
+  return '<div class="row"><div class="upbar grow"><i></i><span>讀取影片中…</span></div><button class="btn ghost small upcancel" type="button">取消</button></div>';
+}
+// 共用：選影片 → 鎖住按鈕 → 上傳（可取消）→ 解鎖。回傳影片或 null
+async function runVideoUpload(holder, lock) {
+  const f = await pickFile('video/*');
+  if (!f) return null;                      // 沒選就什麼都不做
+  const ctl = {};
+  lock(true);
+  holder.innerHTML = progressHtml();
+  $('.upcancel', holder).onclick = () => { ctl.cancelled = true; ctl.xhr?.abort(); };
+  try {
+    const v = await uploadVideoFile(f, r => setProgress(holder, r), ctl);
+    toast('影片已上傳');
+    return v;
+  } catch (err) {
+    toast(ctl.cancelled ? '已取消上傳' : err.message, 4500);
+    return null;
+  } finally {
+    lock(false);
+  }
 }
 function setProgress(box, r) {
   const bar = $('.upbar', box); if (!bar) return;
@@ -871,14 +897,10 @@ async function editPost(id, done) {
   drawVid();
   $('#evid', box).onclick = e => { const vb = e.target.closest('.vbox:not(.playing)'); if (vb) playVideo(vb); };
   $('#eVid', box).onclick = async () => {
-    if (uploading) return;
-    uploading = true; $('#eSave', box).disabled = true;
-    $('#evid', box).innerHTML = progressHtml();
-    try {
-      const v = await pickAndUploadVideo(r => setProgress($('#evid', box), r));
-      if (v) { if (video && video !== oldVideo) removeVideoFiles(video.video_url, video.video_poster); video = v; toast('影片已上傳'); }
-    } catch (err) { toast(err.message, 4500); }
-    uploading = false; $('#eSave', box).disabled = false; drawVid();
+    if (uploading) return toast('影片還在上傳，請稍等');
+    const v = await runVideoUpload($('#evid', box), on => { uploading = on; $('#eSave', box).disabled = on; $('#eVid', box).disabled = on; });
+    if (v) { if (video && video !== oldVideo) removeVideoFiles(video.video_url, video.video_poster); video = v; }
+    drawVid();
   };
   $('#et', box).onclick = e => {
     const c = e.target.closest('.chip'); if (!c) return;
@@ -975,15 +997,11 @@ function renderNewPost() {
   };
   $('#pvid').onclick = e => { const vb = e.target.closest('.vbox:not(.playing)'); if (vb) playVideo(vb); };
   $('#addVid').onclick = async () => {
-    if (uploading) return;
+    if (uploading) return toast('影片還在上傳，請稍等');
     if (video) return toast('一篇只能放一支影片，請先移除舊的');
-    uploading = true; $('#pub').disabled = true;
-    $('#pvid').innerHTML = progressHtml();
-    try {
-      const v = await pickAndUploadVideo(r => setProgress($('#pvid'), r));
-      if (v) { video = v; toast('影片已上傳'); }
-    } catch (err) { toast(err.message, 4500); }
-    uploading = false; $('#pub').disabled = false; drawVid();
+    const v = await runVideoUpload($('#pvid'), on => { uploading = on; $('#pub').disabled = on; $('#addVid').disabled = on; });
+    if (v) video = v;
+    drawVid();
   };
   $('#pub').onclick = async () => {
     const content = $('#pc').value.trim(); if (!content && !video) return toast('寫點什麼吧');
