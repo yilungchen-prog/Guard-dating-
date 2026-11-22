@@ -1,31 +1,29 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { ICON, mascot } from './art.js?v=1.3.1';
+import { ICON, mascot } from './art.js?v=2.0.0';
 
 // ===== 設定 =====
 const SUPABASE_URL = 'https://fpycbdxdjciufjedplrm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fNTxMcpoHVLY5KghadcFpQ_XYdJhXa4';
 const ENABLE_GOOGLE = true;        // Google 登入
 const ENABLE_APPLE = false;        // Apple 登入（需要 Apple Developer 付費帳號，設定好再改成 true）
-const APP_VERSION = '1.3.1';     // 每次更新要跟 version.json 一起改
+const APP_VERSION = '2.0.0';     // 每次更新要跟 version.json 一起改
 const ONLINE_MINUTES = 3;          // 幾分鐘內有心跳算在線
 const HEARTBEAT_MS = 60 * 1000;
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true } });
 
 // ===== 常數 =====
-const SHIFT = { day: '日班', night: '夜班', rotating: '輪班' };
-const SHIFT_ICON = { day: '☀️', night: '🌙', rotating: '🔄' };
-const IDENTITY = { guard: '保全', fan: '想認識保全' };
+const SITE_NAME = '夜聊';
 const GENDER = { male: '男', female: '女', other: '不透露' };
-const DAYS = ['一', '二', '三', '四', '五', '六', '日', '不固定'];
 const REGIONS = ['台北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '苗栗縣', '台中市', '彰化縣', '南投縣', '雲林縣',
   '嘉義市', '嘉義縣', '台南市', '高雄市', '屏東縣', '宜蘭縣', '花蓮縣', '台東縣', '澎湖縣', '金門縣', '連江縣'];
-const POST_TAGS = ['夜班日常', '值班趣事', '休假去哪', '心情', '閒聊'];
-const DM_POLICY = { all: '所有人', same_shift: '只限同班別', none: '關閉陌生訊息' };
-const ICEBREAKERS = ['值夜班最怕遇到什麼？', '你通常哪幾天休假？', '下班後第一件事做什麼？', '值班時都靠什麼提神？', '最近有什麼想去的地方？'];
+const POST_TAGS = ['日常', '心情', '美食', '旅遊', '閒聊'];
+const DM_POLICY = { all: '所有人', none: '關閉陌生訊息' };
+const ICEBREAKERS = ['這麼晚還沒睡？', '最近在追什麼劇？', '週末都怎麼過？', '最近有什麼想去的地方？', '推薦一首你常聽的歌？'];
+const VIDEO_MAX_SEC = 60;                 // 影片最長秒數
+const VIDEO_MAX_BYTES = 50 * 1024 * 1024; // 影片最大 50MB
 const BG_PRESETS = [
   { url: 'bg/bg1.jpg', name: '頂樓夜景' },
-  { url: 'bg/bg2.jpg', name: '雨夜崗亭' },
   { url: 'bg/bg3.jpg', name: '月夜星空' },
   { url: 'bg/bg4.jpg', name: '窗邊咖啡' },
   { url: 'bg/bg5.jpg', name: '長椅插畫' },
@@ -93,8 +91,7 @@ function avatar(p, size = '', online = false) {
 }
 function tags(p) {
   if (!p) return '';
-  return `<span class="tag ${p.identity === 'guard' ? 'guard' : ''}">${IDENTITY[p.identity] || ''}</span>` +
-    `<span class="tag shift-${p.shift}">${SHIFT_ICON[p.shift] || ''} ${SHIFT[p.shift] || ''}</span>`;
+  return (p.interests || []).slice(0, 3).map(t => `<span class="tag">${esc(t)}</span>`).join('');
 }
 function setTitle(t, back = false, right = '') {
   $('#title').textContent = t;
@@ -136,9 +133,9 @@ async function uploadImage(file, max = 1280) {
   if (error) throw error;
   return sb.storage.from('photos').getPublicUrl(path).data.publicUrl;
 }
-function pickFile() {
+function pickFile(accept = 'image/*') {
   return new Promise(res => {
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept;
     inp.onchange = () => res(inp.files[0] || null); inp.click();
   });
 }
@@ -146,7 +143,7 @@ function pickFile() {
 // ===== Q 版裝飾與動畫 =====
 const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 function decorate(root) {
-  $$('.loading:not([data-m])', root).forEach(el => { el.dataset.m = 1; el.innerHTML = mascot('torch', 'sm') + '<div>巡邏中…</div>'; });
+  $$('.loading:not([data-m])', root).forEach(el => { el.dataset.m = 1; el.innerHTML = mascot('torch', 'sm') + '<div>載入中…</div>'; });
   $$('.empty:not([data-m])', root).forEach(el => { el.dataset.m = 1; el.insertAdjacentHTML('afterbegin', mascot('sleep', 'sm')); });
   if (reduceMotion) return;
   let i = 0;
@@ -156,7 +153,7 @@ function decorate(root) {
 }
 new MutationObserver(() => decorate(view)).observe(view, { childList: true, subtree: true });
 function initTabIcons() {
-  const map = { online: 'radar', feed: 'logbook', chats: 'walkie', notif: 'whistle', me: 'cap' };
+  const map = { online: 'people', feed: 'gallery', chats: 'bubble', notif: 'bell', me: 'user' };
   $$('#tabbar a').forEach(a => { $('.ti', a).innerHTML = ICON[map[a.dataset.tab]]; });
 }
 function heartBurst(btn) {
@@ -256,6 +253,101 @@ function startVersionWatch() {
   setInterval(checkForUpdate, 5 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
   setTimeout(checkForUpdate, 3000);
+}
+
+// ===== 影片 =====
+// 讀影片長度，順便截第一個畫面當封面
+function probeVideo(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    let done = false;
+    const finish = (poster) => { if (done) return; done = true; const d = v.duration; URL.revokeObjectURL(url); resolve({ duration: d, poster }); };
+    v.onerror = () => { URL.revokeObjectURL(url); reject(new Error('讀不到這支影片，請換一支試試')); };
+    v.onloadedmetadata = () => {
+      if (!isFinite(v.duration)) { v.currentTime = 1e9; return; }
+      v.currentTime = Math.min(0.5, v.duration / 2);
+    };
+    v.onseeked = () => {
+      try {
+        const scale = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        c.toBlob(b => finish(b), 'image/jpeg', 0.8);
+      } catch { finish(null); }
+    };
+    setTimeout(() => finish(null), 8000);
+  });
+}
+async function uploadWithProgress(bucket, path, blob, contentType, onProgress) {
+  const { data: { session } } = await sb.auth.getSession();
+  await new Promise((res, rej) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', `${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`);
+    x.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
+    x.setRequestHeader('apikey', SUPABASE_KEY);
+    x.setRequestHeader('Content-Type', contentType);
+    x.setRequestHeader('x-upsert', 'false');
+    x.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
+    x.onload = () => {
+      if (x.status < 300) return res();
+      let msg = '上傳失敗'; try { msg = JSON.parse(x.responseText).message || msg; } catch { /* 忽略 */ }
+      rej(new Error(msg));
+    };
+    x.onerror = () => rej(new Error('網路中斷，請再試一次'));
+    x.send(blob);
+  });
+  return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+// 選影片 → 檢查 → 上傳；回傳 { video_url, video_poster }
+async function pickAndUploadVideo(onProgress) {
+  const f = await pickFile('video/*'); if (!f) return null;
+  if (f.size > VIDEO_MAX_BYTES) throw new Error(`影片太大（${(f.size / 1048576).toFixed(0)}MB），上限 50MB，請剪短或用較低畫質拍`);
+  const { duration, poster } = await probeVideo(f);
+  if (isFinite(duration) && duration > VIDEO_MAX_SEC + 0.5) throw new Error(`影片太長（${Math.round(duration)} 秒），上限 ${VIDEO_MAX_SEC} 秒，請先剪短`);
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const ext = (f.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
+  const video_url = await uploadWithProgress('videos', `${state.user.id}/${stamp}.${ext}`, f, f.type || 'video/mp4', onProgress);
+  let video_poster = null;
+  if (poster) {
+    try { video_poster = await uploadWithProgress('photos', `${state.user.id}/${stamp}-poster.jpg`, poster, 'image/jpeg'); } catch { /* 沒封面也沒關係 */ }
+  }
+  return { video_url, video_poster };
+}
+function storagePath(url, bucket) {
+  const key = `/storage/v1/object/public/${bucket}/`;
+  const i = url ? url.indexOf(key) : -1;
+  return i < 0 ? null : decodeURIComponent(url.slice(i + key.length).split('?')[0]);
+}
+function removeVideoFiles(videoUrl, posterUrl) {
+  const v = storagePath(videoUrl, 'videos'), p = storagePath(posterUrl, 'photos');
+  if (v) sb.storage.from('videos').remove([v]);
+  if (p) sb.storage.from('photos').remove([p]);
+}
+function videoBox(p) {
+  return `<div class="vbox" data-src="${esc(p.video_url)}" data-poster="${esc(p.video_poster || '')}">
+    ${p.video_poster ? `<img src="${esc(p.video_poster)}" loading="lazy" alt="">` : ''}
+    <span class="vplay">${ICON.play}</span><span class="vbadge">${ICON.video} 影片</span></div>`;
+}
+function playVideo(vb) {
+  vb.classList.add('playing');
+  vb.innerHTML = `<video src="${esc(vb.dataset.src)}" ${vb.dataset.poster ? `poster="${esc(vb.dataset.poster)}"` : ''} controls autoplay muted playsinline preload="auto"></video>
+    <button class="vsound">🔇 點一下開聲音</button>`;
+  const v = $('video', vb), btn = $('.vsound', vb);
+  btn.onclick = e => { e.stopPropagation(); v.muted = false; v.play(); btn.remove(); };
+  v.onvolumechange = () => { if (!v.muted) btn.remove(); };
+  // 同一時間只播一支
+  $$('.vbox.playing video').forEach(o => { if (o !== v) o.pause(); });
+}
+function progressHtml() {
+  return '<div class="upbar"><i></i><span>影片上傳中… 0%</span></div>';
+}
+function setProgress(box, r) {
+  const bar = $('.upbar', box); if (!bar) return;
+  $('i', bar).style.width = Math.round(r * 100) + '%';
+  $('span', bar).textContent = r >= 1 ? '處理中…' : `影片上傳中… ${Math.round(r * 100)}%`;
 }
 
 // ===== 啟動 =====
@@ -383,11 +475,11 @@ async function route() {
 
 // ===== 登入（只限 Google / Apple）=====
 function renderAuth() {
-  setTitle('夜哨交友'); setTab(null);
+  setTitle(SITE_NAME); setTab(null);
   document.body.classList.add('login');
   view.innerHTML = `
     ${starsHtml()}
-    <div class="hero">${mascot('hello', 'lg')}<h2>夜哨交友</h2><p>保全人員與想認識保全的人<br>值班的夜裡，有人陪你聊天</p></div>
+    <div class="hero">${mascot('hello', 'lg')}<h2>${SITE_NAME}</h2><p>睡不著的夜裡<br>有人陪你聊天、分享生活</p></div>
     <div class="card">
       ${ENABLE_GOOGLE ? '<button class="btn block oauth google" data-p="google"><span class="oi">G</span> 使用 Google 帳號登入</button>' : ''}
       ${ENABLE_APPLE ? '<button class="btn block oauth apple" data-p="apple"><span class="oi"></span> 使用 Apple 帳號登入</button>' : ''}
@@ -408,9 +500,8 @@ function renderEditProfile(isNew) {
   setTitle(isNew ? '建立個人資料' : '編輯個人資料', !isNew); setTab(isNew ? null : 'me');
   const meta = state.user.user_metadata || {};
   const p = state.me || { nickname: (meta.name || meta.full_name || '').slice(0, 20), gender: 'other', age: '', region: '', bio: '',
-    identity: 'guard', shift: 'night', days_off: [], interests: [], photos: [] };
+    interests: [], photos: [] };
   const photos = [...(p.photos || [])];
-  const daysOff = new Set(p.days_off || []);
   const chipRow = (name, map, val) => `<div class="chips" data-name="${name}">${Object.entries(map).map(([k, v]) => `<span class="chip ${k === val ? 'on' : ''}" data-v="${k}">${v}</span>`).join('')}</div>`;
   view.innerHTML = `
     <div class="card">
@@ -423,25 +514,17 @@ function renderEditProfile(isNew) {
         <div class="grow"><label class="f">年齡</label><input type="number" id="age" min="18" max="99" inputmode="numeric" value="${esc(p.age ?? '')}"></div>
         <div class="grow"><label class="f">地區</label><select id="region"><option value="">不透露</option>${REGIONS.map(r => `<option ${r === p.region ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
       </div>
-      <label class="f">我是</label>${chipRow('identity', IDENTITY, p.identity)}
-      <label class="f">班別</label>${chipRow('shift', SHIFT, p.shift)}
-      <label class="f">常休假的日子（可複選）</label>
-      <div class="chips" id="days">${DAYS.map(d => `<span class="chip ${daysOff.has(d) ? 'on' : ''}" data-v="${d}">${d === '不固定' ? d : '週' + d}</span>`).join('')}</div>
       <label class="f">興趣（用空白或逗號分開）</label><input type="text" id="ints" value="${esc((p.interests || []).join(' '))}" placeholder="例如：釣魚 追劇 健身">
-      <label class="f">自我介紹</label><textarea id="bio" maxlength="500" placeholder="介紹一下自己，值班之外喜歡做什麼？">${esc(p.bio || '')}</textarea>
+      <label class="f">自我介紹</label><textarea id="bio" maxlength="500" placeholder="介紹一下自己，平常喜歡做什麼？">${esc(p.bio || '')}</textarea>
       <div style="height:16px"></div>
       <button class="btn block" id="save">${isNew ? '下一步' : '儲存'}</button>
       ${isNew ? '<button class="btn ghost block" id="logout" style="margin-top:8px">登出</button>' : ''}
     </div>`;
-  const vals = { gender: p.gender, identity: p.identity, shift: p.shift };
+  const vals = { gender: p.gender };
   $$('.chips[data-name]', view).forEach(row => row.addEventListener('click', e => {
     const c = e.target.closest('.chip'); if (!c) return;
     $$('.chip', row).forEach(x => x.classList.remove('on')); c.classList.add('on'); vals[row.dataset.name] = c.dataset.v;
   }));
-  $('#days').addEventListener('click', e => {
-    const c = e.target.closest('.chip'); if (!c) return;
-    const v = c.dataset.v; daysOff.has(v) ? daysOff.delete(v) : daysOff.add(v); c.classList.toggle('on');
-  });
   const drawPhotos = () => {
     $('#phs').innerHTML = photos.map((u, i) => `<div class="ph"><img src="${esc(u)}"><button class="x" data-i="${i}">✕</button></div>`).join('') +
       (photos.length < 6 ? '<div class="ph" id="addPh">＋</div>' : '');
@@ -464,7 +547,6 @@ function renderEditProfile(isNew) {
     if (ageV !== null && (ageV < 18 || ageV > 99)) return toast('年齡需要 18 歲以上');
     const row = {
       id: state.user.id, nickname, gender: vals.gender, age: ageV, region: $('#region').value || null,
-      identity: vals.identity, shift: vals.shift, days_off: [...daysOff],
       interests: $('#ints').value.split(/[\s,，、]+/).map(s => s.trim()).filter(Boolean).slice(0, 15),
       bio: $('#bio').value.trim(), photos,
     };
@@ -485,19 +567,18 @@ function renderOnboarding(page, review = false) {
   setTitle('新手說明', review); setTab(null);
   const steps = `<div class="steps">${[0, 1, 2].map(i => `<i class="${i <= page ? 'on' : ''}"></i>`).join('')}</div>`;
   const pages = [
-    `<div class="center">${mascot('hello')}</div><h2>👋 歡迎來到夜哨交友</h2>
+    `<div class="center">${mascot('hello')}</div><h2>👋 歡迎來到${SITE_NAME}</h2>
      <ul>
-       <li>這裡是<b>保全人員</b>和<b>想認識保全的人</b>的交友空間</li>
        <li>不用配對，看到<b>在線的人</b>就能直接聊天</li>
-       <li>在<b>動態牆</b>分享值班心得、生活點滴</li>
-       <li>可以篩選<b>同班別</b>的人，夜班找夜班，最有話聊</li>
+       <li>在<b>動態牆</b>分享生活點滴，可以附<b>照片</b>或<b>小影片</b></li>
+       <li>可以用<b>性別、年齡、地區</b>篩選想認識的人</li>
      </ul>`,
     `<div class="center">${mascot('shield')}</div><h2>🛡️ 保護自己（防詐騙）</h2>
      <div class="warn">本站<b>沒有身分驗證</b>，對方說的身分不一定是真的。</div>
      <ul>
        <li>談到<b>錢、投資、借款、匯款、虛擬貨幣</b>，一律拒絕</li>
        <li>不要太快加 LINE 或其他通訊軟體，詐騙集團常要你轉到站外</li>
-       <li>不要給<b>身分證、銀行帳號、住址、工作哨位</b></li>
+       <li>不要給<b>身分證、銀行帳號、住址、工作地點</b></li>
        <li>第一次見面約在<b>人多的公開場所</b>，並告訴朋友</li>
        <li>遇到可疑情況，撥打 <b>165 反詐騙專線</b></li>
      </ul>`,
@@ -534,7 +615,7 @@ function getFilters() {
 }
 async function renderOnline() {
   setTitle('在線的人'); setTab('online');
-  const f = Object.assign({ mode: 'online', gender: '', identity: '', shift: '', region: '', age: '' }, getFilters());
+  const f = Object.assign({ mode: 'online', gender: '', region: '', age: '' }, getFilters());
   const sel = (id, label, map, v) => `<select id="${id}"><option value="">${label}：不限</option>${Object.entries(map).map(([k, t]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
   view.innerHTML = `
     ${state.banned ? '<div class="warn">你的帳號已被停權，無法發文或傳訊息。</div>' : ''}
@@ -542,8 +623,6 @@ async function renderOnline() {
     <div class="seg"><button data-m="online" class="${f.mode === 'online' ? 'on' : ''}">現在在線</button><button data-m="recent" class="${f.mode === 'recent' ? 'on' : ''}">最近上線</button></div>
     <div class="filters">
       ${sel('fGender', '性別', GENDER, f.gender)}
-      ${sel('fIdentity', '身分', IDENTITY, f.identity)}
-      ${sel('fShift', '班別', SHIFT, f.shift)}
       ${sel('fRegion', '地區', Object.fromEntries(REGIONS.map(r => [r, r])), f.region)}
       ${sel('fAge', '年齡', { '18-25': '18–25', '26-35': '26–35', '36-45': '36–45', '46-99': '46 以上' }, f.age)}
       <button class="btn ghost small" id="fReset">清除篩選</button>
@@ -551,9 +630,9 @@ async function renderOnline() {
     <div id="ulist" class="ulist"><div class="loading">載入中…</div></div>`;
   const save = () => { localStorage.setItem('filters', JSON.stringify(f)); loadList(); };
   $$('.seg button', view).forEach(b => b.onclick = () => { f.mode = b.dataset.m; $$('.seg button', view).forEach(x => x.classList.toggle('on', x === b)); save(); });
-  [['fGender', 'gender'], ['fIdentity', 'identity'], ['fShift', 'shift'], ['fRegion', 'region'], ['fAge', 'age']]
+  [['fGender', 'gender'], ['fRegion', 'region'], ['fAge', 'age']]
     .forEach(([id, k]) => $('#' + id).onchange = e => { f[k] = e.target.value; save(); });
-  $('#fReset').onclick = () => { Object.assign(f, { gender: '', identity: '', shift: '', region: '', age: '' }); localStorage.setItem('filters', JSON.stringify(f)); renderOnline(); };
+  $('#fReset').onclick = () => { Object.assign(f, { gender: '', region: '', age: '' }); localStorage.setItem('filters', JSON.stringify(f)); renderOnline(); };
 
   async function loadList() {
     let q = sb.from('presence').select('user_id,last_seen').order('last_seen', { ascending: false }).limit(300);
@@ -565,11 +644,9 @@ async function renderOnline() {
     rowsRaw.forEach(r => state.profiles.delete(r.user_id));
     await getProfiles(rowsRaw.map(r => r.user_id));
     const [amin, amax] = f.age ? f.age.split('-').map(Number) : [0, 999];
-    const myDays = new Set((state.me.days_off || []).filter(d => d !== '不固定'));
     const rows = rowsRaw.map(r => ({ p: state.profiles.get(r.user_id), last: r.last_seen }))
       .filter(({ p }) => p && !p.invisible
-        && (!f.gender || p.gender === f.gender) && (!f.identity || p.identity === f.identity)
-        && (!f.shift || p.shift === f.shift) && (!f.region || p.region === f.region)
+        && (!f.gender || p.gender === f.gender) && (!f.region || p.region === f.region)
         && (!f.age || (p.age && p.age >= amin && p.age <= amax)));
     if (!rows.length) {
       $('#ulist').innerHTML = `<div class="empty">${f.mode === 'online' ? '目前沒有符合條件的人在線<br>可以看看「最近上線」' : '沒有符合條件的人'}</div>`;
@@ -577,12 +654,11 @@ async function renderOnline() {
     }
     $('#ulist').innerHTML = `<p class="muted small">${f.mode === 'online' ? `共 ${rows.length} 人在線` : `${rows.length} 人`}</p>` + rows.map(({ p, last }) => {
       const on = isOnline(last);
-      const sameDay = (p.days_off || []).some(d => myDays.has(d));
       const info = [p.gender !== 'other' ? GENDER[p.gender] : '', p.age || '', p.region || ''].filter(Boolean).join(' · ');
       return `<a class="u" href="#/u/${p.id}">${avatar(p, '', on)}
         <div class="grow" style="min-width:0">
           <div class="row"><span class="name">${esc(p.nickname)}</span><span class="muted small">${esc(info)}</span></div>
-          <div style="margin-top:4px">${tags(p)}${p.shift === state.me.shift ? '<span class="tag">同班別</span>' : ''}${sameDay ? '<span class="tag">同天休假</span>' : ''}</div>
+          <div style="margin-top:4px">${tags(p)}${p.region && p.region === state.me.region ? '<span class="tag near">同地區</span>' : ''}</div>
           ${p.bio ? `<div class="bio">${esc(p.bio)}</div>` : ''}
         </div>
         <span class="muted small" style="white-space:nowrap">${on ? '在線' : timeAgo(last)}</span></a>`;
@@ -614,12 +690,11 @@ async function renderUser(id) {
         ${p.gender !== 'other' ? `<dt>性別</dt><dd>${GENDER[p.gender]}</dd>` : ''}
         ${p.age ? `<dt>年齡</dt><dd>${p.age}</dd>` : ''}
         ${p.region ? `<dt>地區</dt><dd>${esc(p.region)}</dd>` : ''}
-        ${p.days_off?.length ? `<dt>常休假</dt><dd>${p.days_off.map(d => d === '不固定' ? d : '週' + d).join('、')}</dd>` : ''}
         ${p.interests?.length ? `<dt>興趣</dt><dd>${p.interests.map(esc).join('、')}</dd>` : ''}
-        <dt>私訊</dt><dd>${p.dm_policy === 'all' ? '接受所有人' : p.dm_policy === 'same_shift' ? `只接受${SHIFT[p.shift]}私訊` : '不接受陌生訊息'}</dd>
+        <dt>私訊</dt><dd>${p.dm_policy === 'none' ? '不接受陌生訊息' : '接受所有人'}</dd>
       </dl>
       ${p.bio ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(p.bio)}</p>` : ''}
-      ${blocked ? '<div class="warn">你已封鎖此人</div>' : `<button class="btn block" id="dm" style="margin-top:8px">${ICON.walkie} 傳訊息</button>`}
+      ${blocked ? '<div class="warn">你已封鎖此人</div>' : `<button class="btn block" id="dm" style="margin-top:8px">${ICON.bubble} 傳訊息</button>`}
     </div>
     <h3>${esc(p.nickname)} 的動態</h3><div id="uposts"><div class="loading">載入中…</div></div>`;
   if ($('#dm')) $('#dm').onclick = () => { location.hash = '#/chat/' + id; };
@@ -671,29 +746,21 @@ function reportDialog(target) {
 // ===== 動態牆 =====
 async function renderFeed() {
   setTitle('動態牆'); setTab('feed');
-  let fs = { scope: 'all', tag: '' };
+  let fs = { tag: '' };
   try { fs = Object.assign(fs, JSON.parse(sessionStorage.getItem('feedF') || '{}')); } catch { /* 忽略 */ }
   view.innerHTML = `
-    <div class="seg"><button data-s="all" class="${fs.scope === 'all' ? 'on' : ''}">全部</button><button data-s="shift" class="${fs.scope === 'shift' ? 'on' : ''}">只看${SHIFT[state.me.shift]}</button></div>
     <div class="chips" id="tagf" style="margin-bottom:12px"><span class="chip ${!fs.tag ? 'on' : ''}" data-t="">全部</span>${POST_TAGS.map(t => `<span class="chip ${fs.tag === t ? 'on' : ''}" data-t="${t}">#${t}</span>`).join('')}</div>
     <div id="plist"><div class="loading">載入中…</div></div>
     <div style="text-align:center"><button class="btn ghost small hidden" id="moreP">載入更多</button></div>
-    <button class="fab" id="fab" aria-label="發文">${ICON.logbook}</button>`;
+    <button class="fab" id="fab" aria-label="發文">${ICON.pen}</button>`;
   const saveF = () => { sessionStorage.setItem('feedF', JSON.stringify(fs)); renderFeed(); };
-  $$('.seg button', view).forEach(b => b.onclick = () => { fs.scope = b.dataset.s; saveF(); });
   $('#tagf').onclick = e => { const c = e.target.closest('.chip'); if (c) { fs.tag = c.dataset.t; saveF(); } };
   $('#fab').onclick = () => { location.hash = '#/newpost'; };
 
-  let shiftIds = null;
-  if (fs.scope === 'shift') {
-    const { data } = await sb.from('profiles').select('id').eq('shift', state.me.shift).limit(1000);
-    shiftIds = (data || []).map(r => r.id);
-  }
   const PAGE = 20; let page = 0; let all = [];
   const load = async () => {
     let q = sb.from('posts').select('*').order('created_at', { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
     if (fs.tag) q = q.eq('tag', fs.tag);
-    if (shiftIds) q = q.in('author_id', shiftIds.length ? shiftIds : ['00000000-0000-0000-0000-000000000000']);
     const { data, error } = await q;
     if (error) { $('#plist').innerHTML = `<div class="empty">${esc(error.message)}</div>`; return; }
     all = all.concat((data || []).filter(p => !state.blocks.has(p.author_id)));
@@ -723,10 +790,11 @@ function postCard(p, a, nLike, isLiked, nCmt, full = false) {
   const open = full ? '' : `data-open="${p.id}"`;
   return `<div class="card post" data-id="${p.id}" data-author="${p.author_id}">
     <a class="head" href="#/u/${p.author_id}">${avatar(a, 'sm')}
-      <div class="grow"><div><b>${esc(a?.nickname || '已刪除的使用者')}</b> ${a ? `<span class="tag shift-${a.shift}">${SHIFT_ICON[a.shift]} ${SHIFT[a.shift]}</span>` : ''}</div>
+      <div class="grow"><div><b>${esc(a?.nickname || '已刪除的使用者')}</b>${a?.region ? ` <span class="muted small">${esc(a.region)}</span>` : ''}</div>
       <div class="muted small">${timeAgo(p.created_at)}${p.edited_at ? '（已編輯）' : ''}${p.tag ? ' · #' + esc(p.tag) : ''}</div></div></a>
     <div class="content" ${open}>${esc(p.content)}</div>
     ${p.image_url ? `<img class="pimg" src="${esc(p.image_url)}" loading="lazy" ${open}>` : ''}
+    ${p.video_url ? videoBox(p) : ''}
     <div class="acts">
       <button data-like="${p.id}" class="like ${isLiked ? 'liked' : ''}">${ICON.heart} <span>${nLike}</span></button>
       <button data-open="${p.id}">${ICON.comment} ${nCmt}</button>
@@ -760,7 +828,9 @@ function bindPostActions(container) {
         if (a === 'edit') { closeModal(); return editPost(id, () => location.hash.startsWith('#/post/') ? renderPost(id) : route()); }
         if (a === 'del') {
           if (!confirmText('確定刪除？')) return;
+          const { data: old } = await sb.from('posts').select('video_url,video_poster').eq('id', id).maybeSingle();
           const { error } = await sb.from('posts').delete().eq('id', id);
+          if (!error && mine && old) removeVideoFiles(old.video_url, old.video_poster);
           closeModal(); if (error) return toast('刪除失敗');
           toast('已刪除'); if (location.hash.startsWith('#/post/')) history.back(); else card.remove();
         }
@@ -768,6 +838,8 @@ function bindPostActions(container) {
       };
       return;
     }
+    const vb = e.target.closest('.vbox:not(.playing)');
+    if (vb) { playVideo(vb); return; }
     const op = e.target.closest('[data-open]');
     if (op) location.hash = '#/post/' + op.dataset.open;
   };
@@ -777,19 +849,37 @@ async function editPost(id, done) {
   const { data: p } = await sb.from('posts').select('*').eq('id', id).maybeSingle();
   if (!p) return toast('找不到這篇動態');
   if (state.banned) return toast('帳號已停權');
-  let tag = p.tag || '', imageUrl = p.image_url;
+  let tag = p.tag || '', imageUrl = p.image_url, video = p.video_url ? { video_url: p.video_url, video_poster: p.video_poster } : null, uploading = false;
+  const oldVideo = video;
   const box = openModal(`<h3 style="margin-top:0">✏️ 編輯動態</h3>
     <textarea id="ec" maxlength="2000" style="min-height:150px">${esc(p.content)}</textarea>
     <label class="f">分類</label>
     <div class="chips" id="et">${POST_TAGS.map(t => `<span class="chip ${t === tag ? 'on' : ''}" data-t="${t}">#${t}</span>`).join('')}</div>
     <div id="eimg" style="margin-top:12px"></div>
-    <div class="row" style="margin-top:12px"><button class="btn ghost small" id="eAdd">${ICON.camera} 換照片</button></div>
+    <div id="evid" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:12px"><button class="btn ghost small" id="eAdd">${ICON.camera} 換照片</button><button class="btn ghost small" id="eVid">${ICON.video} 換影片</button></div>
     <div class="row" style="margin-top:14px"><button class="btn ghost grow" id="eCancel">取消</button><button class="btn grow" id="eSave">儲存</button></div>`);
   const drawImg = () => {
     $('#eimg', box).innerHTML = imageUrl ? `<img src="${esc(imageUrl)}" style="max-width:100%;max-height:220px;border-radius:10px"><br><button class="btn ghost small" id="eRm" style="margin-top:6px">移除照片</button>` : '';
     if ($('#eRm', box)) $('#eRm', box).onclick = () => { imageUrl = null; drawImg(); };
   };
   drawImg();
+  const drawVid = () => {
+    $('#evid', box).innerHTML = video ? `${videoBox(video)}<button class="btn ghost small" id="eRmV" style="margin-top:6px">移除影片</button>` : '';
+    if ($('#eRmV', box)) $('#eRmV', box).onclick = () => { if (video !== oldVideo) removeVideoFiles(video.video_url, video.video_poster); video = null; drawVid(); };
+  };
+  drawVid();
+  $('#evid', box).onclick = e => { const vb = e.target.closest('.vbox:not(.playing)'); if (vb) playVideo(vb); };
+  $('#eVid', box).onclick = async () => {
+    if (uploading) return;
+    uploading = true; $('#eSave', box).disabled = true;
+    $('#evid', box).innerHTML = progressHtml();
+    try {
+      const v = await pickAndUploadVideo(r => setProgress($('#evid', box), r));
+      if (v) { if (video && video !== oldVideo) removeVideoFiles(video.video_url, video.video_poster); video = v; toast('影片已上傳'); }
+    } catch (err) { toast(err.message, 4500); }
+    uploading = false; $('#eSave', box).disabled = false; drawVid();
+  };
   $('#et', box).onclick = e => {
     const c = e.target.closest('.chip'); if (!c) return;
     const on = c.classList.contains('on'); $$('.chip', $('#et', box)).forEach(x => x.classList.remove('on'));
@@ -802,10 +892,13 @@ async function editPost(id, done) {
   };
   $('#eCancel', box).onclick = closeModal;
   $('#eSave', box).onclick = async () => {
-    const content = $('#ec', box).value.trim(); if (!content) return toast('內容不能空白');
+    const content = $('#ec', box).value.trim(); if (!content && !video) return toast('內容不能空白');
+    if (uploading) return toast('影片還在上傳，請稍等');
     $('#eSave', box).disabled = true;
-    const { error } = await sb.from('posts').update({ content, tag: tag || null, image_url: imageUrl }).eq('id', id);
+    const { error } = await sb.from('posts').update({ content: content || '🎬', tag: tag || null, image_url: imageUrl,
+      video_url: video?.video_url || null, video_poster: video?.video_poster || null }).eq('id', id);
     if (error) { $('#eSave', box).disabled = false; return toast('儲存失敗：' + error.message); }
+    if (oldVideo && video !== oldVideo) removeVideoFiles(oldVideo.video_url, oldVideo.video_poster);
     closeModal(); toast('已更新'); done?.();
   };
 }
@@ -852,14 +945,15 @@ function commentRow(c, a) {
 function renderNewPost() {
   setTitle('發表動態', true); setTab(null);
   if (state.banned) { view.innerHTML = '<div class="warn">帳號已停權，無法發文。</div>'; return; }
-  let tag = '', imageUrl = null;
+  let tag = '', imageUrl = null, video = null, uploading = false;
   view.innerHTML = `<div class="card">
-    <textarea id="pc" maxlength="2000" placeholder="分享一下今天值班的心得、心情…" style="min-height:160px"></textarea>
+    <textarea id="pc" maxlength="2000" placeholder="分享一下今天的生活、心情…" style="min-height:160px"></textarea>
     <label class="f">分類</label>
     <div class="chips" id="pt">${POST_TAGS.map(t => `<span class="chip" data-t="${t}">#${t}</span>`).join('')}</div>
     <div id="pimg" style="margin-top:12px"></div>
-    <div class="row" style="margin-top:12px"><button class="btn ghost" id="addImg">${ICON.camera} 加照片</button><span class="grow"></span><button class="btn" id="pub">發布</button></div>
-    <p class="muted small" style="margin-top:12px">請勿在文章中透露公司名稱、哨位或個人資料。</p>
+    <div id="pvid" style="margin-top:12px"></div>
+    <div class="row wrap" style="margin-top:12px"><button class="btn ghost" id="addImg">${ICON.camera} 照片</button><button class="btn ghost" id="addVid">${ICON.video} 影片</button><span class="grow"></span><button class="btn" id="pub">發布</button></div>
+    <p class="muted small" style="margin-top:12px">影片最長 ${VIDEO_MAX_SEC} 秒、50MB 以內。請勿在文章中透露住址、電話等個人資料。</p>
   </div>`;
   $('#pt').onclick = e => {
     const c = e.target.closest('.chip'); if (!c) return;
@@ -875,10 +969,28 @@ function renderNewPost() {
       $('#rmImg').onclick = () => { imageUrl = null; $('#pimg').innerHTML = ''; };
     } catch (err) { toast('上傳失敗：' + err.message); }
   };
+  const drawVid = () => {
+    $('#pvid').innerHTML = video ? `${videoBox(video)}<button class="btn ghost small" id="rmVid" style="margin-top:6px">移除影片</button>` : '';
+    if ($('#rmVid')) $('#rmVid').onclick = () => { removeVideoFiles(video.video_url, video.video_poster); video = null; drawVid(); };
+  };
+  $('#pvid').onclick = e => { const vb = e.target.closest('.vbox:not(.playing)'); if (vb) playVideo(vb); };
+  $('#addVid').onclick = async () => {
+    if (uploading) return;
+    if (video) return toast('一篇只能放一支影片，請先移除舊的');
+    uploading = true; $('#pub').disabled = true;
+    $('#pvid').innerHTML = progressHtml();
+    try {
+      const v = await pickAndUploadVideo(r => setProgress($('#pvid'), r));
+      if (v) { video = v; toast('影片已上傳'); }
+    } catch (err) { toast(err.message, 4500); }
+    uploading = false; $('#pub').disabled = false; drawVid();
+  };
   $('#pub').onclick = async () => {
-    const content = $('#pc').value.trim(); if (!content) return toast('寫點什麼吧');
+    const content = $('#pc').value.trim(); if (!content && !video) return toast('寫點什麼吧');
+    if (uploading) return toast('影片還在上傳，請稍等');
     $('#pub').disabled = true;
-    const { error } = await sb.from('posts').insert({ author_id: state.user.id, content, tag: tag || null, image_url: imageUrl });
+    const { error } = await sb.from('posts').insert({ author_id: state.user.id, content: content || '🎬', tag: tag || null, image_url: imageUrl,
+      video_url: video?.video_url || null, video_poster: video?.video_poster || null });
     $('#pub').disabled = false;
     if (error) return toast('發布失敗：' + error.message);
     toast('已發布'); location.hash = '#/feed';
@@ -927,7 +1039,7 @@ async function renderChat(otherId) {
   let reason = '';
   if (state.banned) reason = '帳號已停權，無法傳訊息';
   else if (blocked) reason = '你已封鎖此人';
-  else if (!can) reason = p.dm_policy === 'same_shift' ? `對方只接受${SHIFT[p.shift]}的私訊` : '對方目前不接受你的訊息';
+  else if (!can) reason = '對方目前不接受你的訊息';
 
   view.innerHTML = `<div class="chat-wrap">
     <div class="chat-msgs" id="msgs">

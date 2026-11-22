@@ -299,3 +299,34 @@ input[type=range] { accent-color: var(--accent); height: 28px; }
 #topbar h1 { font-size: 19px; text-shadow: none; }
 /* 頭像置中 */
 .av-wrap { display: inline-block; vertical-align: middle; }
+
+/* ===== v2.0 夜聊 ===== */
+/* 底部選單：在線綠點跳動、聊天三個點閃爍 */
+#tabbar a.active .pulse { transform-box: fill-box; transform-origin: center; animation: dotPulse 1.6s ease-in-out infinite; color: var(--online); }
+#tabbar a .pulse { color: var(--online); }
+#tabbar a.has-new .waves { opacity: 1; animation: blink 1s steps(2) infinite; color: var(--accent); }
+@keyframes dotPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+/* 小月亮動作的轉軸 */
+.mascot .wave { transform-origin: 108px 84px; }
+.mascot .torch { transform-origin: 112px 88px; }
+.mascot .spark { animation: twinkle 1.4s ease-in-out infinite; }
+.mascot .spark.s2 { animation-delay: .7s; }
+.tag.near { color: var(--online); }
+
+/* 影片 */
+.vbox { position: relative; margin-top: 8px; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 9 / 12; max-height: 460px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.vbox img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+.vbox .vplay { position: relative; width: 64px; height: 64px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff;
+  display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,.8); }
+.vbox .vplay .ic { width: 30px; height: 30px; margin-left: 4px; }
+.vbox .vbadge { position: absolute; left: 10px; top: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; font-weight: 600;
+  padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 4px; }
+.vbox .vbadge .ic { width: 14px; height: 14px; }
+.vbox.playing { cursor: default; aspect-ratio: auto; max-height: none; }
+.vbox video { width: 100%; max-height: 70vh; display: block; background: #000; }
+.vbox .vsound { position: absolute; right: 10px; top: 10px; border: 0; border-radius: 999px; background: rgba(0,0,0,.65); color: #fff;
+  font-size: 13px; padding: 7px 12px; cursor: pointer; }
+.upbar { position: relative; height: 34px; border-radius: 10px; background: var(--panel2); overflow: hidden; }
+.upbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #f5b942, #ffd27a); transition: width .2s; }
+.upbar span { position: relative; display: block; text-align: center; line-height: 34px; font-size: 14px; font-weight: 600; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
